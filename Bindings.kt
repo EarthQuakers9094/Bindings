@@ -1,17 +1,23 @@
 import com.pathplanner.lib.auto.NamedCommands
+import com.sun.org.apache.xpath.internal.operations.Bool
 import edu.wpi.first.util.ErrorMessages
 import edu.wpi.first.util.sendable.SendableBuilder
 import edu.wpi.first.wpilibj.DriverStation
 import edu.wpi.first.wpilibj.Filesystem
 import edu.wpi.first.wpilibj.Timer
+import edu.wpi.first.wpilibj.smartdashboard.SendableChooser
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard
 import edu.wpi.first.wpilibj2.command.Command
 import edu.wpi.first.wpilibj2.command.Commands
+import edu.wpi.first.wpilibj2.command.InstantCommand
 import edu.wpi.first.wpilibj2.command.button.CommandGenericHID
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 import org.json.simple.JSONObject
 import java.io.File
+import java.time.InstantSource
 import java.util.function.Supplier
+import kotlin.math.max
 
 // copied from wpilib because they are deprecating a constructor i need
 class MyProxyCommand : Command {
@@ -98,8 +104,8 @@ fun getSensitivities(it: JsonElement): Double {
 
 @Serializable
 data class SaveData(
-    val url: String?, 
-    val commands: HashSet<String>, 
+//    val url: String?,
+//    val commands: HashSet<String>,
     val command_to_bindings: HashMap<String, List<Binding>>,
     val controllers: List<JsonElement>, // handling raw
     val controller_names: List<String>,
@@ -138,11 +144,27 @@ data class Buttons(
     val analog: MutableList<MutableList<Command?>>,
 )
 
-class Bindings() {
+
+// pass the driver and operator in here to lock them
+// or pass in null to display a chooser to let them
+// be chosen at runtime (best during testing)
+// it's probably a good idea to lock the driver at competitions
+// to remove room for mistakes.
+//
+// driver and operator can be unlocked by calling unlock_drivers
+// or pressing the unlock drivers button on SmartDashboard
+// if needed during competition.
+//
+// bindings can be reloaded by calling reset bindings
+// during the competition. it's suggest to call this at the start of teleop
+class Bindings(private val driver_lock: String?,private val operator_lock: String?) {
     val usedBindings: HashSet<Binding>;
     var bindings: MutableList<Buttons>;
-    var controllers: MutableList<CommandGenericHID?>;
+    var controllers: MutableList<CommandGenericHID?>
     var controller_sensitivities: List<Double>
+    var operator: SendableChooser<File> = SendableChooser()
+    var driver: SendableChooser<File> = SendableChooser()
+    var override_drivers: Boolean = false;
 
     init {
         bindings = mutableListOf()
@@ -155,6 +177,17 @@ class Bindings() {
         }
 
         resetCommands()
+
+        SmartDashboard.putData("unlock drivers", InstantCommand({
+            this.unlockDrivers()
+        }))
+    }
+
+    fun unlockDrivers() {
+        SmartDashboard.putData(driver);
+        SmartDashboard.putData(operator);
+
+        override_drivers = true;
     }
 
     fun makePov(): MutableList<MutableList<Command?>> {
@@ -176,70 +209,107 @@ class Bindings() {
 
         timer.start()
 
-        val file = File(Filesystem.getDeployDirectory(), "bindings.json").readText();
+        val children = File(Filesystem.getDeployDirectory(), "bindings").listFiles();
 
-        val data:SaveData = Json.decodeFromJsonElement(Json.parseToJsonElement(file));
+        for (child in children!!) {
+            val name = child.nameWithoutExtension;
+            operator.addOption(name, child);
+            driver.addOption(name, child)
+        }
+
+        val operator = if (operator_lock == null || override_drivers) {
+            SmartDashboard.putData("operator choice", operator)
+            operator.selected
+        } else {
+            File(File(Filesystem.getDeployDirectory(), "bindings"),
+                "${operator_lock}.json")
+        }
+
+        val driver = if (driver_lock == null || override_drivers) {
+            SmartDashboard.putData("driver choice", driver)
+            driver.selected
+        } else {
+            File(File(Filesystem.getDeployDirectory(), "bindings"),
+                "${driver_lock}.json")
+        };
+
+        val d1:SaveData = Json.decodeFromString(operator.readText());
+        val d2:SaveData = Json.decodeFromString(driver.readText());
+
+//        val file = File(Filesystem.getDeployDirectory(), "bindings.json").readText();
+
+//        val data:SaveData = Json.decodeFromJsonElement(Json.parseToJsonElement(file));
 
         bindings = mutableListOf()
 
-        for ((reg, analog) in data.controller_buttons) {
-            bindings.add(Buttons(makePov(), makeButtons(reg), makeButtons(analog)))
+        for ((a, b) in d1.controller_buttons.zip(d2.controller_buttons)) {
+            bindings.add(Buttons(makePov(), makeButtons(max(a.first, b.first)), makeButtons(max(a.second, b.second))))
         }
 
-        controller_sensitivities = data.controller_sensitivities;
+        // arbitrary choice between the two of them because they shouldn't be double bound in the first place
+        controller_sensitivities = d1.controller_sensitivities.zipWithNext { a, b ->  max(a,b)};
 
-        for ((command, bindings) in data.command_to_bindings) {
-            for (binding in bindings) {
-                if (!usedBindings.contains(binding)) {
-                    if (binding.controller >= controllers.size || binding.controller < 0) {
-                        DriverStation.reportError("invalid controller found in binding", true);
-                        continue;
-                    }
-                    val controller = controllers[binding.controller]
-
-                    if (controller == null) {
-                        DriverStation.reportError("invalid controller found in binding", true);
-                        
-                        continue;
-                    }
-
-                    mapBinding(controller, binding.controller, binding.button, binding.during)
-
-                    usedBindings.add(binding)
-                }
-
-                when (binding.button.location) {
-                    ButtonLocation.Button -> {
-                        val a = this.bindings.get(binding.controller).regular[binding.button.button]
-                        a[binding.during.ordinal] = if (a[binding.during.ordinal] == null) {
-                            NamedCommands.getCommand(command)
-                        } else {
-                            a[binding.during.ordinal]!!.alongWith(NamedCommands.getCommand(command))
-                        }
-                    }
-                    ButtonLocation.Pov -> {
-                        val a = this.bindings.get(binding.controller).pov[povtoindex(binding.button.button)]
-                        a[binding.during.ordinal] = if (a[binding.during.ordinal] == null) {
-                            NamedCommands.getCommand(command)
-                        } else {
-                            a[binding.during.ordinal]!!.alongWith(NamedCommands.getCommand(command))
-                        }
-                    }
-                    ButtonLocation.Analog -> {
-                        val a = this.bindings.get(binding.controller).analog[binding.button.button]
-                        a[binding.during.ordinal] = if (a[binding.during.ordinal] == null) {
-                            NamedCommands.getCommand(command)
-                        } else {
-                            a[binding.during.ordinal]!!.alongWith(NamedCommands.getCommand(command))
-                        }
-                    }
-                }
-            }
+        for ((command, bindings) in d1.command_to_bindings) {
+            add_bindings(command, bindings);
         }
+
+        for ((command, bindings) in d2.command_to_bindings) {
+            add_bindings(command, bindings);
+        }
+
 
         val time = timer.get()
 
         DriverStation.reportWarning("binding time ${time}", false)
+    }
+
+    fun add_bindings(command: String, bindings: List<Binding>) {
+        for (binding in bindings) {
+            if (!usedBindings.contains(binding)) {
+                if (binding.controller >= controllers.size || binding.controller < 0) {
+                    DriverStation.reportError("invalid controller found in binding", true);
+                    continue;
+                }
+                val controller = controllers[binding.controller]
+
+                if (controller == null) {
+                    DriverStation.reportError("invalid controller found in binding", true);
+
+                    continue;
+                }
+
+                mapBinding(controller, binding.controller, binding.button, binding.during)
+
+                usedBindings.add(binding)
+            }
+
+            when (binding.button.location) {
+                ButtonLocation.Button -> {
+                    val a = this.bindings.get(binding.controller).regular[binding.button.button]
+                    a[binding.during.ordinal] = if (a[binding.during.ordinal] == null) {
+                        NamedCommands.getCommand(command)
+                    } else {
+                        a[binding.during.ordinal]!!.alongWith(NamedCommands.getCommand(command))
+                    }
+                }
+                ButtonLocation.Pov -> {
+                    val a = this.bindings.get(binding.controller).pov[povtoindex(binding.button.button)]
+                    a[binding.during.ordinal] = if (a[binding.during.ordinal] == null) {
+                        NamedCommands.getCommand(command)
+                    } else {
+                        a[binding.during.ordinal]!!.alongWith(NamedCommands.getCommand(command))
+                    }
+                }
+                ButtonLocation.Analog -> {
+                    val a = this.bindings.get(binding.controller).analog[binding.button.button]
+                    a[binding.during.ordinal] = if (a[binding.during.ordinal] == null) {
+                        NamedCommands.getCommand(command)
+                    } else {
+                        a[binding.during.ordinal]!!.alongWith(NamedCommands.getCommand(command))
+                    }
+                }
+            }
+        }
     }
 
     fun povtoindex(pov: Int): Int {
@@ -269,12 +339,6 @@ class Bindings() {
                 ButtonLocation.Pov -> bindings[controller].pov[b][run.ordinal]
                 ButtonLocation.Analog -> bindings[controller].analog[b][run.ordinal]
             } ?: Commands.none()
-
-//            (if (pov) {
-//                bindings[controller].pov[b][run.ordinal]
-//            } else {
-//                bindings[controller].regular[b][run.ordinal]
-//            }) ?: Commands.none()
         })
 
         when (run) {

@@ -1,3 +1,5 @@
+package bindings
+
 import com.pathplanner.lib.auto.NamedCommands
 import com.sun.org.apache.xpath.internal.operations.Bool
 import edu.wpi.first.util.ErrorMessages

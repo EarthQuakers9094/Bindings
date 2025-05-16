@@ -20,6 +20,7 @@ import java.io.File
 import java.time.InstantSource
 import java.util.function.Supplier
 import kotlin.math.max
+import java.nio.file.attribute.FileTime
 
 // copied from wpilib because they are deprecating a constructor i need
 class MyProxyCommand : Command {
@@ -79,35 +80,8 @@ fun myGetJsonObject(e: JsonElement): JsonObject? {
     }
 }
 
-// fun getNumButtons(e: JsonElement): Pair<Int, Int> {
-//     when (e) {
-//         is JsonObject -> {
-//             return if (e.keys.contains("XBox")) {
-//                 Pair(10, 6)
-//             } else {
-//                 Pair(e["Generic"]!!.jsonObject["buttons"]!!.jsonPrimitive.int, 0)
-//             }
-//         }
-//         else -> {
-//             return Pair(0,0)
-//         }
-//     }
-// }
-
-// fun getSensitivities(it: JsonElement): Double {
-//     val t = (it.jsonObject?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double);
-
-//     return if (t == null) {
-//         0.5
-//     } else {
-//         t
-//     }
-// }
-
 @Serializable
 data class SaveData(
-//    val url: String?,
-//    val commands: HashSet<String>,
     val command_to_bindings: HashMap<String, List<Binding>>,
     val controllers: List<JsonElement>, // handling raw
     val controller_names: List<String>,
@@ -136,6 +110,7 @@ data class SaveData(
     } 
     }
 }
+
 @Serializable
 enum class RunWhen {
     OnTrue,
@@ -185,9 +160,15 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
     var bindings: MutableList<Buttons>;
     var controllers: MutableList<CommandGenericHID?>
     var controller_sensitivities: List<Double>
+
     var operator: SendableChooser<File> = SendableChooser()
     var driver: SendableChooser<File> = SendableChooser()
+
+    var lastModified: Long;
+
     var override_drivers: Boolean = false;
+    var driver_file: File? = null;
+    var operator_file: File? = null;
 
     init {
         bindings = mutableListOf()
@@ -199,20 +180,13 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
             controllers.add(CommandGenericHID(i))
         }
 
-        // val children = File(Filesystem.getDeployDirectory(), "bindings").listFiles();
-
-        // for (child in children!!) {
-        //     val name = child.nameWithoutExtension;
-        //     operator.addOption(name, child);
-        //     driver.addOption(name, child)
-        // }
-
-        // SmartDashboard.putData("operator choice", operator)
-        // SmartDashboard.putData("driver choice", driver)
-
         rebuildProfiles()
 
-        // resetCommands()
+        lastModified = 0;
+
+        if (driver_lock != null && operator_lock != null) {
+            resetCommands()
+        }
 
         SmartDashboard.putData("unlock drivers", InstantCommand({
             this.unlockDrivers()
@@ -287,12 +261,18 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
             ignoreUnknownKeys = true
         };
 
+        val time: Long = max(op.lastModified(), driver.lastModified());
+
+        if (time <= lastModified && driver_file == driver && op == operator_file) {
+            return
+        }
+
+        lastModified = time;
+        driver_file = driver!!;
+        operator_file = op!!;
+
         val d1:SaveData = withUnknown.decodeFromString(op.readText());
         val d2:SaveData = withUnknown.decodeFromString(driver.readText());
-
-//        val file = File(Filesystem.getDeployDirectory(), "bindings.json").readText();
-
-//        val data:SaveData = Json.decodeFromJsonElement(Json.parseToJsonElement(file));
 
         bindings = mutableListOf()
 
@@ -314,9 +294,9 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
         rebuildProfiles()
 
 
-        val time = timer.get()
+        val time_took = timer.get()
 
-        DriverStation.reportWarning("binding time ${time}", false)
+        DriverStation.reportWarning("binding time ${time_took}", false)
     }
 
     fun add_bindings(command: String, bindings: List<Binding>) {

@@ -72,37 +72,37 @@ class MyProxyCommand : Command {
     }
 }
 
-fun getJsonObject(e: JsonElement): JsonObject? {
+fun myGetJsonObject(e: JsonElement): JsonObject? {
     return when (e) {
         is JsonObject -> e.jsonObject
         else -> null
     }
 }
 
-fun getNumButtons(e: JsonElement): Pair<Int, Int> {
-    when (e) {
-        is JsonObject -> {
-            return if (e.keys.contains("XBox")) {
-                Pair(10, 6)
-            } else {
-                Pair(e["Generic"]!!.jsonObject["buttons"]!!.jsonPrimitive.int, 0)
-            }
-        }
-        else -> {
-            return Pair(0,0)
-        }
-    }
-}
+// fun getNumButtons(e: JsonElement): Pair<Int, Int> {
+//     when (e) {
+//         is JsonObject -> {
+//             return if (e.keys.contains("XBox")) {
+//                 Pair(10, 6)
+//             } else {
+//                 Pair(e["Generic"]!!.jsonObject["buttons"]!!.jsonPrimitive.int, 0)
+//             }
+//         }
+//         else -> {
+//             return Pair(0,0)
+//         }
+//     }
+// }
 
-fun getSensitivities(it: JsonElement): Double {
-    val t = (getJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double);
+// fun getSensitivities(it: JsonElement): Double {
+//     val t = (it.jsonObject?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double);
 
-    return if (t == null) {
-        0.5
-    } else {
-        t
-    }
-}
+//     return if (t == null) {
+//         0.5
+//     } else {
+//         t
+//     }
+// }
 
 @Serializable
 data class SaveData(
@@ -112,8 +112,29 @@ data class SaveData(
     val controllers: List<JsonElement>, // handling raw
     val controller_names: List<String>,
 ) {
-    val controller_sensitivities = controllers.map { getSensitivities(it) }
-    val controller_buttons = controllers.map { getNumButtons(it) }
+    val controller_sensitivities = controllers.map { 
+        val t = (myGetJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double);
+
+        if (t == null) {
+            0.5
+        } else {
+            t
+        }
+    }
+    val controller_buttons = controllers.map {     
+        when (it) {
+        is JsonObject -> {
+            if (it.keys.contains("XBox")) {
+                Pair(10, 6)
+            } else {
+                Pair(it["Generic"]!!.jsonObject["buttons"]!!.jsonPrimitive.int, 0)
+            }
+        }
+        else -> {
+            Pair(0,0)
+        }
+    } 
+    }
 }
 @Serializable
 enum class RunWhen {
@@ -178,11 +199,40 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
             controllers.add(CommandGenericHID(i))
         }
 
-        resetCommands()
+        // val children = File(Filesystem.getDeployDirectory(), "bindings").listFiles();
+
+        // for (child in children!!) {
+        //     val name = child.nameWithoutExtension;
+        //     operator.addOption(name, child);
+        //     driver.addOption(name, child)
+        // }
+
+        // SmartDashboard.putData("operator choice", operator)
+        // SmartDashboard.putData("driver choice", driver)
+
+        rebuildProfiles()
+
+        // resetCommands()
 
         SmartDashboard.putData("unlock drivers", InstantCommand({
             this.unlockDrivers()
         }))
+    }
+
+    fun rebuildProfiles() {
+        val children = File(Filesystem.getDeployDirectory(), "bindings").listFiles();
+
+        operator = SendableChooser();
+        driver = SendableChooser();
+
+        for (child in children!!) {
+            val name = child.nameWithoutExtension;
+            operator.addOption(name, child);
+            driver.addOption(name, child)
+        }
+
+        SmartDashboard.putData("operator choice", operator)
+        SmartDashboard.putData("driver choice", driver)
     }
 
     fun unlockDrivers() {
@@ -211,32 +261,34 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
 
         timer.start()
 
-        val children = File(Filesystem.getDeployDirectory(), "bindings").listFiles();
-
-        for (child in children!!) {
-            val name = child.nameWithoutExtension;
-            operator.addOption(name, child);
-            driver.addOption(name, child)
-        }
-
-        val operator = if (operator_lock == null || override_drivers) {
-            SmartDashboard.putData("operator choice", operator)
+        val op = if (operator_lock == null || override_drivers) {
+            DriverStation.reportWarning("getting from dashboard", false)
             operator.selected
         } else {
+            DriverStation.reportWarning("getting from file", false)
+
             File(File(Filesystem.getDeployDirectory(), "bindings"),
                 "${operator_lock}.json")
         }
 
         val driver = if (driver_lock == null || override_drivers) {
-            SmartDashboard.putData("driver choice", driver)
             driver.selected
         } else {
             File(File(Filesystem.getDeployDirectory(), "bindings"),
                 "${driver_lock}.json")
         };
 
-        val d1:SaveData = Json.decodeFromString(operator.readText());
-        val d2:SaveData = Json.decodeFromString(driver.readText());
+        if (op == null || driver == null) {
+            DriverStation.reportError("could not get driver or operator json (make sure they are both selected and the profiles exist)", false);
+            return;
+        }
+
+        val withUnknown = Json {
+            ignoreUnknownKeys = true
+        };
+
+        val d1:SaveData = withUnknown.decodeFromString(op.readText());
+        val d2:SaveData = withUnknown.decodeFromString(driver.readText());
 
 //        val file = File(Filesystem.getDeployDirectory(), "bindings.json").readText();
 
@@ -258,6 +310,8 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
         for ((command, bindings) in d2.command_to_bindings) {
             add_bindings(command, bindings);
         }
+
+        rebuildProfiles()
 
 
         val time = timer.get()

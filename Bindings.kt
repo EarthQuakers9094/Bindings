@@ -1,7 +1,6 @@
 package bindings
 
 import com.pathplanner.lib.auto.NamedCommands
-import com.sun.org.apache.xpath.internal.operations.Bool
 import edu.wpi.first.util.ErrorMessages
 import edu.wpi.first.util.sendable.SendableBuilder
 import edu.wpi.first.wpilibj.DriverStation
@@ -15,12 +14,13 @@ import edu.wpi.first.wpilibj2.command.InstantCommand
 import edu.wpi.first.wpilibj2.command.button.CommandGenericHID
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
-import org.json.simple.JSONObject
 import java.io.File
-import java.time.InstantSource
 import java.util.function.Supplier
 import kotlin.math.max
-import java.nio.file.attribute.FileTime
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.reflect.KClass
+import kotlin.reflect.cast
+
 
 // copied from wpilib because they are deprecating a constructor i need
 class MyProxyCommand : Command {
@@ -31,11 +31,11 @@ class MyProxyCommand : Command {
         m_supplier = ErrorMessages.requireNonNullParam(supplier, "supplier", "ProxyCommand")
     }
 
-    constructor(command: Command) {
-        val nullCheckedCommand = ErrorMessages.requireNonNullParam(command, "command", "ProxyCommand")
-        m_supplier = Supplier { nullCheckedCommand }
-        name = "Proxy(" + nullCheckedCommand.name + ")"
-    }
+//    constructor(command: Command) {
+//        val nullCheckedCommand = ErrorMessages.requireNonNullParam(command, "command", "ProxyCommand")
+//        m_supplier = Supplier { nullCheckedCommand }
+//        name = "Proxy(" + nullCheckedCommand.name + ")"
+//    }
 
     override fun initialize() {
         m_command = m_supplier.get()
@@ -73,7 +73,7 @@ class MyProxyCommand : Command {
     }
 }
 
-fun myGetJsonObject(e: JsonElement): JsonObject? {
+fun myGetJsonObject(e: JsonElement?): JsonObject? {
     return when (e) {
         is JsonObject -> e.jsonObject
         else -> null
@@ -82,12 +82,18 @@ fun myGetJsonObject(e: JsonElement): JsonObject? {
 
 @Serializable
 data class SaveData(
+    val constants: JsonElement
+)
+
+@Serializable
+data class Profile(
     val command_to_bindings: HashMap<String, List<Binding>>,
     val controllers: List<JsonElement>, // handling raw
     val controller_names: List<String>,
+    val constants: JsonElement,
 ) {
-    val controller_sensitivities = controllers.map { 
-        val t = (myGetJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double);
+    val controller_sensitivities = controllers.map {
+        val t = (myGetJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double)
 
         if (t == null) {
             0.5
@@ -95,7 +101,7 @@ data class SaveData(
             t
         }
     }
-    val controller_buttons = controllers.map {     
+    val controller_buttons = controllers.map {
         when (it) {
         is JsonObject -> {
             if (it.keys.contains("XBox")) {
@@ -107,7 +113,7 @@ data class SaveData(
         else -> {
             Pair(0,0)
         }
-    } 
+    }
     }
 }
 
@@ -142,6 +148,208 @@ data class Buttons(
     val analog: MutableList<MutableList<Command?>>,
 )
 
+public class Constant<Value>(private var value: Value, private val c: Class<Value>) {
+    val listeners = CopyOnWriteArrayList<(v: Value) -> Unit>();
+
+    public fun addListener(ev: (v: Value) -> Unit) {
+        listeners.add(ev);
+    }
+
+    public fun updateValueObject(v: Object) {
+        this.updateValue(c.cast(v))
+    }
+
+    public fun updateValue(v: Value) {
+        value = v;
+
+        for (l in listeners) {
+            l(v)
+        }
+    }
+
+    public fun getValue(): Value {
+        return value
+    }
+}
+
+fun getOrDriverDefault(constants: JsonElement): JsonPrimitive? {
+    return when (constants) {
+        is JsonObject -> {
+            val a = constants.jsonObject["default"];
+
+            if (a == null) {
+                null
+            } else {
+                tryGetPrimative(a)
+            }
+        }
+        is JsonPrimitive -> {
+            constants.jsonPrimitive
+        }
+        else -> {
+            DriverStation.reportError("$constants is not Driver (with default) or normal value", true);
+            null
+        }
+    }
+}
+
+fun tryGetPrimative(constants: JsonElement): JsonPrimitive? {
+    return when (constants) {
+        is JsonPrimitive -> {
+            constants.jsonPrimitive;
+        }
+        else -> {
+            DriverStation.reportError("$constants is not a json primitive", true);
+            null
+        }
+    }
+}
+
+fun<T: Any> makeConstantsClass(c: KClass<T>, constants: JsonElement): T {
+    val a = when (c) {
+        Int::class -> {
+            DriverStation.reportWarning("making int? $c", false);
+            val i: Int = getOrDriverDefault(constants)?.int!!;
+            return c.cast(i)
+        }
+        Double::class -> {
+            getOrDriverDefault(constants)?.double
+        }
+        String::class -> {
+            getOrDriverDefault(constants)?.content
+        }
+       Constant::class-> {
+           Constant(
+               makeConstantsClass(
+                   c.typeParameters[0] as KClass<T>,
+                   constants),
+               c.typeParameters[0].)
+       }
+        else -> {
+            val cons = c.constructors;
+
+            val name = c.simpleName;
+
+            if (cons.size == 0) {
+                DriverStation.reportError("$name does not have any visible constructors (crashing now)", false);
+            }
+
+            DriverStation.reportWarning("number of constructors: ${cons.size}", false)
+
+            val con = cons.first();
+
+            val map = myGetJsonObject(myGetJsonObject(constants)?.get("map"));
+
+            DriverStation.reportWarning("fields ${con.parameters.size}", false);
+
+            con.call(*(con.parameters.map {
+                val a = map?.get("${it.name}");
+
+                DriverStation.reportWarning("map ${map}", false);
+
+                DriverStation.reportError("making ${it.name}", false);
+                DriverStation.reportWarning("value ${it}", false)
+
+                DriverStation.reportWarning("parameter: ${a}, ${it.type}", false)
+
+                val res = if (a == null) {
+                    null
+                } else {
+                    makeConstantsClass(it.type.classifier as KClass<*>, a)
+                };
+
+                DriverStation.reportWarning("result ${res}", false);
+
+                res
+            }.toTypedArray()))
+        }
+    };
+
+    return c.cast(a)
+}
+
+fun update_constants(
+    constants: Object,
+    global: JsonElement?,
+    driver1: JsonElement?,
+    driver2: JsonElement?): Object? {
+    return when (constants) {
+        is Int -> {
+            getOrDriver(global, driver1, driver2)?.int
+        }
+        is Double -> {
+            getOrDriver(global, driver1, driver2)?.double
+        }
+        is String -> {
+            getOrDriver(global, driver1, driver2)?.content
+        }
+        is Constant<*> -> {
+            val c = constants.getValue()!!.javaClass;
+
+            val v = update_constants(constants.getValue() as Object, global, driver1, driver2);
+
+            if (v == null) {
+                null
+            } else {
+                constants.updateValueObject(v);
+                constants as Object
+            }
+        }
+        else -> {
+            val global = myGetJsonObject(myGetJsonObject(global)?.get("map"));
+            val driver1 = myGetJsonObject(myGetJsonObject(driver1)?.get("map"));
+            val driver2 = myGetJsonObject(myGetJsonObject(driver1)?.get("map"));
+
+            for (field in constants::class.java.fields) {
+                DriverStation.reportWarning("accessing $field from $constants", false);
+
+                val v = field.get(constants);
+
+                val name = field.name;
+
+                val o = update_constants(v as Object, global?.get(name), driver1?.get(name), driver2?.get(name))
+
+                if (o == null) {
+                    return null
+                } else {
+                    field.set(constants, o)
+                }
+            }
+
+            constants
+        }
+    } as Object?
+}
+
+fun getAsPrimitive(a: JsonElement?): JsonPrimitive? {
+    return when (a) {
+        is JsonPrimitive -> {
+            a.jsonPrimitive
+        }
+        else -> {
+            null
+        }
+    }
+}
+
+fun getOrDriver(
+    global: JsonElement?,
+    driver1: JsonElement?,
+    driver2: JsonElement?,
+): JsonPrimitive? {
+    return when (global) {
+        is JsonObject -> {
+            getAsPrimitive(driver1) ?: getAsPrimitive(driver2)
+        }
+        is JsonPrimitive ->{
+            global.jsonPrimitive
+        }
+        else -> {
+            DriverStation.reportError("not primitive or driver $global", true);
+            null
+        }
+    };
+}
 
 // pass the driver and operator in here to lock them
 // or pass in null to display a chooser to let them
@@ -155,7 +363,7 @@ data class Buttons(
 //
 // bindings can be reloaded by calling reset bindings
 // during the competition. it's suggest to call this at the start of teleop
-class Bindings(private val driver_lock: String?,private val operator_lock: String?) {
+class Bindings<C: Any>(private val driver_lock: String?, private val operator_lock: String?, private val c: Class<C>) {
     val usedBindings: HashSet<Binding>;
     var bindings: MutableList<Buttons>;
     var controllers: MutableList<CommandGenericHID?>
@@ -164,11 +372,13 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
     var operator: SendableChooser<File> = SendableChooser()
     var driver: SendableChooser<File> = SendableChooser()
 
-    var lastModified: Long;
+    var lastModified: Long = 0;
 
     var override_drivers: Boolean = false;
     var driver_file: File? = null;
     var operator_file: File? = null;
+
+    var constants: C;
 
     init {
         bindings = mutableListOf()
@@ -177,12 +387,17 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
         controller_sensitivities = mutableListOf(0.5,0.5,0.5,0.5,0.5);
 
         for (i in 0..4) {
-            controllers.add(CommandGenericHID(i))
         }
 
-        rebuildProfiles()
+        constants = makeConstantsClass(c.kotlin, getJsonConstants())!!
+        
+        if (constants == null) {
+            DriverStation.reportWarning("fjdsakl;fjdsakl;", false);
+        }
 
-        lastModified = 0;
+        DriverStation.reportWarning("final constants class $constants", false);
+
+        rebuildProfiles()
 
         if (driver_lock != null && operator_lock != null) {
             resetCommands()
@@ -191,6 +406,22 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
         SmartDashboard.putData("unlock drivers", InstantCommand({
             this.unlockDrivers()
         }))
+    }
+
+    fun getJsonConstants(): JsonElement {
+        val file = File(Filesystem.getDeployDirectory(), "bindings.json").readText();
+
+        val withUnknown = Json {
+            ignoreUnknownKeys = true
+        };
+
+        val s: SaveData = withUnknown.decodeFromString(file);
+
+        return s.constants
+    }
+
+    fun constants(): C {
+        return constants
     }
 
     fun rebuildProfiles() {
@@ -261,7 +492,10 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
             ignoreUnknownKeys = true
         };
 
-        val time: Long = max(op.lastModified(), driver.lastModified());
+        val savedata = File(Filesystem.getDeployDirectory(), "bindings.json");
+
+        val time: Long = max(max(op.lastModified(), driver.lastModified()), savedata.lastModified());
+
 
         if (time <= lastModified && driver_file == driver && op == operator_file) {
             return
@@ -271,8 +505,15 @@ class Bindings(private val driver_lock: String?,private val operator_lock: Strin
         driver_file = driver!!;
         operator_file = op!!;
 
-        val d1:SaveData = withUnknown.decodeFromString(op.readText());
-        val d2:SaveData = withUnknown.decodeFromString(driver.readText());
+        val d1:Profile = withUnknown.decodeFromString(op.readText());
+        val d2:Profile = withUnknown.decodeFromString(driver.readText());
+
+        constants = c.cast(
+            update_constants(
+                constants as Object,
+                getJsonConstants(),
+                d1.constants,
+                d2.constants));
 
         bindings = mutableListOf()
 

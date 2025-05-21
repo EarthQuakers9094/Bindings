@@ -20,6 +20,7 @@ import kotlin.math.max
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.reflect.KClass
 import kotlin.reflect.cast
+import kotlin.reflect.typeOf
 
 
 // copied from wpilib because they are deprecating a constructor i need
@@ -148,7 +149,7 @@ data class Buttons(
     val analog: MutableList<MutableList<Command?>>,
 )
 
-public class Constant<Value>(private var value: Value, private val c: Class<Value>) {
+public class Constant<Value : Any>(private var value: Value, private val c: KClass<Value>) {
     val listeners = CopyOnWriteArrayList<(v: Value) -> Unit>();
 
     public fun addListener(ev: (v: Value) -> Unit) {
@@ -205,7 +206,23 @@ fun tryGetPrimative(constants: JsonElement): JsonPrimitive? {
     }
 }
 
-fun<T: Any> makeConstantsClass(c: KClass<T>, constants: JsonElement): T {
+fun <T : Any> makeConstants(c: KClass<T>, constants: JsonElement): Constant<T>? {
+    val a = c.typeParameters.get(0) as? KClass<T>;
+
+    if (a == null) {
+        return null;
+    }
+
+    val r = makeConstantsClass(a, constants);
+
+    if (r == null) {
+        return null;
+    }
+
+    return Constant(r, a)
+}
+
+fun<T: Any> makeConstantsClass(c: KClass<T>, constants: JsonElement): T? {
     val a = when (c) {
         Int::class -> {
             DriverStation.reportWarning("making int? $c", false);
@@ -219,11 +236,13 @@ fun<T: Any> makeConstantsClass(c: KClass<T>, constants: JsonElement): T {
             getOrDriverDefault(constants)?.content
         }
        Constant::class-> {
-           Constant(
-               makeConstantsClass(
-                   c.typeParameters[0] as KClass<T>,
-                   constants),
-               c.typeParameters[0].)
+           val a = c as KClass<Constant<*>>;
+
+           val typeArgs = c.typeParameters.firstOrNull();
+
+           val b = typeArgs as? KClass<*>;
+
+           return c.cast(makeConstants(a, constants));
        }
         else -> {
             val cons = c.constructors;
@@ -378,7 +397,7 @@ class Bindings<C: Any>(private val driver_lock: String?, private val operator_lo
     var driver_file: File? = null;
     var operator_file: File? = null;
 
-    var constants: C;
+    var constants: C? = null;
 
     init {
         bindings = mutableListOf()
@@ -420,7 +439,7 @@ class Bindings<C: Any>(private val driver_lock: String?, private val operator_lo
         return s.constants
     }
 
-    fun constants(): C {
+    fun constants(): C? {
         return constants
     }
 
@@ -508,12 +527,16 @@ class Bindings<C: Any>(private val driver_lock: String?, private val operator_lo
         val d1:Profile = withUnknown.decodeFromString(op.readText());
         val d2:Profile = withUnknown.decodeFromString(driver.readText());
 
-        constants = c.cast(
-            update_constants(
-                constants as Object,
-                getJsonConstants(),
-                d1.constants,
-                d2.constants));
+        if (constants != null) {
+            DriverStation.reportError("CONSTANTS IS NULL", false);
+
+            constants = c.cast(
+                update_constants(
+                    constants as Object,
+                    getJsonConstants(),
+                    d1.constants,
+                    d2.constants));
+        }
 
         bindings = mutableListOf()
 

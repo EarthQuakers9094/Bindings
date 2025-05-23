@@ -75,7 +75,8 @@ fun myGetJsonObject(e: JsonElement?): JsonObject? {
 
 @Serializable
 data class SaveData(
-    val constants: JsonElement
+    val constants: JsonElement,
+    val streams: HashSet<String>,
 )
 
 @Serializable
@@ -84,6 +85,7 @@ data class Profile(
     val controllers: List<JsonElement>, // handling raw
     val controller_names: List<String>,
     val constants: JsonElement,
+    val stream_to_axis: HashMap<String, Pair<Int,Int>>,
 ) {
     val controller_sensitivities = controllers.map {
         val t = (myGetJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double)
@@ -313,6 +315,17 @@ fun getOrDriver(
     };
 }
 
+class Stream(private var controller: CommandGenericHID?, private var axis: Int) {
+    fun getValue(): Double {
+        return controller?.getRawAxis(axis) ?: 0.0
+    }
+
+    fun setAxis(controller: CommandGenericHID, axis: Int) {
+        this.controller = controller
+        this.axis = axis
+    }
+}
+
 // pass the driver and operator in here to lock them
 // or pass in null to display a chooser to let them
 // be chosen at runtime (best during testing)
@@ -340,6 +353,8 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
     var driver_file: File? = null;
     var operator_file: File? = null;
 
+    var streams: HashMap<String, Stream> = hashMapOf();
+
     public var constants: C;
 
     init {
@@ -350,6 +365,10 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
 
         for (i in 0..4) {
             controllers.add(CommandGenericHID(i))
+        }
+
+        for (stream in getSaveData().streams) {
+            streams.put(stream, Stream(null, 0))
         }
 
         val a = update_constants(c as Object, mutableListOf(), getJsonConstants(), null, null);
@@ -373,16 +392,18 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
         }))
     }
 
-    fun getJsonConstants(): JsonElement {
+    fun getSaveData(): SaveData {
         val file = File(Filesystem.getDeployDirectory(), "bindings.json").readText();
 
         val withUnknown = Json {
             ignoreUnknownKeys = true
         };
 
-        val s: SaveData = withUnknown.decodeFromString(file);
+        return withUnknown.decodeFromString(file);
+    }
 
-        return s.constants
+    fun getJsonConstants(): JsonElement {
+        return getSaveData().constants
     }
 
 //    fun constants(): C {
@@ -476,6 +497,14 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
         val d1:Profile = withUnknown.decodeFromString(op.readText());
         val d2:Profile = withUnknown.decodeFromString(driver.readText());
 
+        val s: SaveData = withUnknown.decodeFromString(savedata.readText());
+
+        for (stream in s.streams) {
+            if (!streams.containsKey(stream)) {
+                streams.put(stream, Stream(null, 0))
+            }
+        }
+
         val a = update_constants(
             constants as Object,
             mutableListOf(),
@@ -487,6 +516,10 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
             constants = c!!::class.cast(a)
         } else {
             DriverStation.reportError("FAILED TO UPDATE CONSTANTS", false)
+        }
+
+        for ((stream, axis) in d1.stream_to_axis) {
+            streams[stream]?.setAxis(controllers[axis.first]!!, axis.second)
         }
 
         bindings = mutableListOf()

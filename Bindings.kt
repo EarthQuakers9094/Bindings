@@ -85,7 +85,7 @@ data class Profile(
     val controllers: List<JsonElement>, // handling raw
     val controller_names: List<String>,
     val constants: JsonElement,
-    val stream_to_axis: HashMap<String, Pair<Int,Int>>,
+    val stream_to_axis: HashMap<String, List<Int>>,
 ) {
     val controller_sensitivities = controllers.map {
         val t = (myGetJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double)
@@ -392,6 +392,10 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
         }))
     }
 
+    fun getStream(name: String): Stream? {
+        return streams[name]
+    }
+
     fun getSaveData(): SaveData {
         val file = File(Filesystem.getDeployDirectory(), "bindings.json").readText();
 
@@ -519,7 +523,7 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
         }
 
         for ((stream, axis) in d1.stream_to_axis) {
-            streams[stream]?.setAxis(controllers[axis.first]!!, axis.second)
+            streams[stream]?.setAxis(controllers[axis[0]]!!, axis[1])
         }
 
         bindings = mutableListOf()

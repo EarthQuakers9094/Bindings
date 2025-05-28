@@ -88,7 +88,8 @@ data class Profile(
     val stream_to_axis: HashMap<String, List<Int>>,
 ) {
     val controller_sensitivities = controllers.map {
-        val t = (myGetJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double)
+        val t = (myGetJsonObject(it)?.get("XBox")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double) 
+             ?: (myGetJsonObject(it)?.get("Generic")?.jsonObject?.get("sensitivity")?.jsonPrimitive?.double)
 
         if (t == null) {
             0.5
@@ -102,7 +103,8 @@ data class Profile(
             if (it.keys.contains("XBox")) {
                 Pair(10, 6)
             } else {
-                Pair(it["Generic"]!!.jsonObject["buttons"]!!.jsonPrimitive.int, 0)
+                Pair(it["Generic"]!!.jsonObject["buttons"]!!.jsonPrimitive.int, 
+                     it["Generic"]!!.jsonObject["axises"]!!.jsonPrimitive.int)
             }
         }
         else -> {
@@ -118,6 +120,9 @@ enum class RunWhen {
     OnFalse,
     WhileTrue,
     WhileFalse,
+    OnChange,
+    ToggleOnFalse,
+    ToggleOnTrue,
 }
 
 @Serializable
@@ -445,7 +450,7 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
         val c:MutableList<MutableList<Command?>> = mutableListOf();
 
         for (i in 0..num) {
-            c.add(mutableListOf(null,null,null,null))
+            c.add(mutableListOf(null,null,null,null,null,null,null))
         }
 
         return c
@@ -646,7 +651,15 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
             RunWhen.WhileFalse -> {
                 t.whileFalse(select_command)
             }
+            RunWhen.OnChange -> {
+                t.onChange(select_command)
+            }
+            RunWhen.ToggleOnTrue -> {
+                t.toggleOnTrue(select_command)
+            }
+            RunWhen.ToggleOnFalse -> {
+                t.toggleOnFalse(select_command)
+            }
         }
-
     }
 }

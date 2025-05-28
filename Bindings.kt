@@ -213,31 +213,56 @@ fun update_constants(
     driver2: JsonElement?): Object? {
     val res = when (constants) {
         is Int? -> {
-            getOrDriver(global, driver1, driver2)?.int
+            val d = getOrDriver(global, driver1, driver2);
+
+            if (d == null) {
+                DriverStation.reportError("path: $key doesn't exist in constants", false);
+                null
+            } else {
+                val i = d.intOrNull;
+
+                if (i == null) {
+                    DriverStation.reportError("path: $key is not an integer", false);
+                    null
+                } else {
+                    i
+                }
+            }
         }
         is Double? -> {
-            getOrDriver(global, driver1, driver2)?.double
+            val d = getOrDriver(global, driver1, driver2);
+
+            if (d == null) {
+                DriverStation.reportError("path: $key doesn't exist in constants", false);
+                null
+            } else {
+                val i = d.doubleOrNull;
+
+                if (i == null) {
+                    DriverStation.reportError("path: $key is not an float", false);
+                    null
+                } else {
+                    i
+                }
+            }
         }
         is String -> {
-            getOrDriver(global, driver1, driver2)?.content
+            val d = getOrDriver(global, driver1, driver2);
+
+            if (d == null) {
+                DriverStation.reportError("path: $key doesn't exist in constants", false);
+                null
+            } else {
+                d.content
+            }
         }
         is Constant<*> -> {
-//            val c = constants.getValue()!!.javaClass;
-
-            key.add("constant");
-
             val v = update_constants(constants.getValue() as Object, key, global, driver1, driver2);
 
-            key.removeLast()
-
             if (v == null) {
-                DriverStation.reportError("failed to update constant", false);
                 null
             } else {
                 constants.updateValueObject(v);
-
-                DriverStation.reportWarning("constants value $constants", false);
-
                 constants as Object
             }
         }

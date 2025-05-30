@@ -172,6 +172,95 @@ public class Constant<Value : Any>(private var value: Value /*, private val c: K
     public fun getValue(): Value {
         return value
     }
+
+    public fun<A: Any> map(f: (Value) -> A): Constant<A> {
+        val res = Constant(f(value));
+
+        addListener { res.updateValue(f(it)) }
+
+        return res
+    }
+
+    public fun<A: Any, R: Any> map2(a: Constant<A>, f: (Value,A) -> R): Constant<R> {
+        val res = Constant(f(value, a.getValue()));
+
+        addListener { res.updateValue(f(it, a.getValue())) }
+        a.addListener { res.updateValue(f(getValue(),it)) }
+
+        return res;
+    }
+
+    public fun<A: Any, B: Any, R: Any> map3(a: Constant<A>, b: Constant<B>, f: (Value,A,B) -> R): Constant<R> {
+        val res = Constant(f(value, a.getValue(), b.getValue()));
+
+        addListener { res.updateValue(f(it, a.getValue(), b.getValue())) }
+        a.addListener { res.updateValue(f(getValue(),it,b.getValue())) }
+        b.addListener { res.updateValue(f(getValue(),a.getValue(),it)) }
+
+        return res;
+    }
+
+    public fun<A: Any, B: Any, C:Any, R: Any> map4(a: Constant<A>, b: Constant<B>, c: Constant<C>, f: (Value,A,B,C) -> R): Constant<R> {
+        val res = Constant(f(value, a.getValue(), b.getValue(), c.getValue()));
+
+        addListener { res.updateValue(f(it, a.getValue(), b.getValue(), c.getValue())) }
+        a.addListener { res.updateValue(f(getValue(),it,b.getValue(), c.getValue())) }
+        b.addListener { res.updateValue(f(getValue(),a.getValue(),it, c.getValue())) }
+        c.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), it)) }
+
+        return res;
+    }
+
+    public fun<A: Any, B: Any, C:Any, D:Any, R: Any> map4(a: Constant<A>, b: Constant<B>, c: Constant<C>, d: Constant<D>, f: (Value,A,B,C,D) -> R): Constant<R> {
+        val res = Constant(f(value, a.getValue(), b.getValue(), c.getValue(), d.getValue()));
+
+        addListener { res.updateValue(f(it, a.getValue(), b.getValue(), c.getValue(), d.getValue())) }
+        a.addListener { res.updateValue(f(getValue(),it,b.getValue(), c.getValue(), d.getValue())) }
+        b.addListener { res.updateValue(f(getValue(),a.getValue(),it, c.getValue(), d.getValue())) }
+        c.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), it, d.getValue())) }
+        d.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), c.getValue(), it)) }
+
+        return res;
+    }
+
+    public fun<A: Any, B: Any, C:Any, D:Any, R: Any> map5(a: Constant<A>, b: Constant<B>, c: Constant<C>, d: Constant<D>, f: (Value,A,B,C,D) -> R): Constant<R> {
+        val res = Constant(f(value, a.getValue(), b.getValue(), c.getValue(), d.getValue()));
+
+        addListener { res.updateValue(f(it, a.getValue(), b.getValue(), c.getValue(), d.getValue())) }
+        a.addListener { res.updateValue(f(getValue(),it,b.getValue(), c.getValue(), d.getValue())) }
+        b.addListener { res.updateValue(f(getValue(),a.getValue(),it, c.getValue(), d.getValue())) }
+        c.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), it, d.getValue())) }
+        d.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), c.getValue(), it)) }
+
+        return res;
+    }
+
+    public fun<A: Any, B: Any, C:Any, D:Any, E:Any, R: Any> map5(a: Constant<A>, b: Constant<B>, c: Constant<C>, d: Constant<D>, e: Constant<E>, f: (Value, A, B, C, D, E) -> R): Constant<R> {
+        val res = Constant(f(value, a.getValue(), b.getValue(), c.getValue(), d.getValue(), e.getValue()));
+
+        addListener { res.updateValue(f(it, a.getValue(), b.getValue(), c.getValue(), d.getValue(), e.getValue())) }
+        a.addListener { res.updateValue(f(getValue(),it,b.getValue(), c.getValue(), d.getValue(), e.getValue())) }
+        b.addListener { res.updateValue(f(getValue(),a.getValue(),it, c.getValue(), d.getValue(), e.getValue())) }
+        c.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), it, d.getValue(), e.getValue())) }
+        d.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), c.getValue(), it, e.getValue())) }
+        e.addListener { res.updateValue(f(getValue(),a.getValue(),b.getValue(), c.getValue(), d.getValue(), it)) }
+
+        return res;
+    }
+
+    public fun<A: Any, B: Any, C:Any, D:Any, E:Any, F: Any, R: Any> map6(a: Constant<A>, b: Constant<B>, c: Constant<C>, d: Constant<D>, e: Constant<E>, f: Constant<F>, z: (Value, A, B, C, D, E, F) -> R): Constant<R> {
+        val res = Constant(z(value, a.getValue(), b.getValue(), c.getValue(), d.getValue(), e.getValue(), f.getValue()));
+
+        addListener { res.updateValue(z(it, a.getValue(), b.getValue(), c.getValue(), d.getValue(), e.getValue(), f.getValue())) }
+        a.addListener { res.updateValue(z(getValue(),it,b.getValue(), c.getValue(), d.getValue(), e.getValue(), f.getValue())) }
+        b.addListener { res.updateValue(z(getValue(),a.getValue(),it, c.getValue(), d.getValue(), e.getValue(), f.getValue())) }
+        c.addListener { res.updateValue(z(getValue(),a.getValue(),b.getValue(), it, d.getValue(), e.getValue(), f.getValue())) }
+        d.addListener { res.updateValue(z(getValue(),a.getValue(),b.getValue(), c.getValue(), it, e.getValue(), f.getValue())) }
+        e.addListener { res.updateValue(z(getValue(),a.getValue(),b.getValue(), c.getValue(), d.getValue(), it, f.getValue())) }
+        f.addListener { res.updateValue(z(getValue(),a.getValue(),b.getValue(), c.getValue(), d.getValue(), e.getValue(), it)) }
+
+        return res;
+    }
 }
 
 fun getOrDriverDefault(constants: JsonElement): JsonPrimitive? {

@@ -160,10 +160,12 @@ public class Constant<Value : Any>(private var value: Value /*, private val c: K
     }
 
     public fun updateValue(v: Value) {
-        value = v;
+        if (v != value) {
+            value = v;
 
-        for (l in listeners) {
-            l(v)
+            for (l in listeners) {
+                l(v)
+            }
         }
     }
 

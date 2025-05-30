@@ -212,6 +212,23 @@ fun update_constants(
     driver1: JsonElement?,
     driver2: JsonElement?): Object? {
     val res = when (constants) {
+        is Boolean -> {
+            val d = getOrDriver(global, driver1, driver2);
+
+            if (d == null) {
+                DriverStation.reportError("path: $key doesn't exist in constants", false);
+                null
+            } else {
+                val i = d.booleanOrNull
+
+                if (i == null) {
+                    DriverStation.reportError("path: $key is not an boolean", false);
+                    null
+                } else {
+                    i
+                }
+            }
+        }
         is Int? -> {
             val d = getOrDriver(global, driver1, driver2);
 
@@ -255,6 +272,21 @@ fun update_constants(
             } else {
                 d.content
             }
+        }
+        is List<*> -> {
+            val d = getOrDriverList(global, driver1, driver2);
+
+            if (d == null) {
+                return null;
+            }
+
+            val v = constants.mapIndexed { i, a ->
+                val v = update_constants(a as Object, key, d[i], null, null);
+
+                v
+            }.filterNotNull().takeIf { constants.size == it.size };
+
+            v
         }
         is Constant<*> -> {
             val v = update_constants(constants.getValue() as Object, key, global, driver1, driver2);
@@ -313,12 +345,36 @@ fun getAsPrimitive(a: JsonElement?): JsonPrimitive? {
     }
 }
 
+fun getAsArray(a: JsonElement?): JsonArray? {
+    return when (a) {
+        is JsonArray -> {
+            a.jsonArray
+        }
+        else -> {
+            null
+        }
+    }
+}
+
 fun getDefault(
     global: JsonElement?
 ): JsonPrimitive? {
     return when (global) {
         is JsonObject -> {
             global.get("default")?.jsonPrimitive
+        }
+        else -> {
+            null
+        }
+    }
+}
+
+fun getDefaultArray(
+    global: JsonElement?
+): JsonArray? {
+    return when (global) {
+        is JsonObject -> {
+            global.get("default")?.jsonArray
         }
         else -> {
             null
@@ -340,6 +396,25 @@ fun getOrDriver(
         }
         else -> {
             DriverStation.reportError("not primitive or driver $global", true);
+            null
+        }
+    };
+}
+
+fun getOrDriverList(
+    global: JsonElement?,
+    driver1: JsonElement?,
+    driver2: JsonElement?,
+): JsonArray? {
+    return when (global) {
+        is JsonObject -> {
+            getAsArray(driver1) ?: getAsArray(driver2) ?: getDefaultArray(global)
+        }
+        is JsonArray ->{
+            global.jsonArray
+        }
+        else -> {
+            DriverStation.reportError("not array or driver $global", true);
             null
         }
     };

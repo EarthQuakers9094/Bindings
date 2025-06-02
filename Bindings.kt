@@ -1,6 +1,8 @@
 package bindings
 
 import com.pathplanner.lib.auto.NamedCommands
+import edu.wpi.first.units.measure.Angle
+import edu.wpi.first.units.measure.Distance
 import edu.wpi.first.util.ErrorMessages
 import edu.wpi.first.util.sendable.SendableBuilder
 import edu.wpi.first.wpilibj.DriverStation
@@ -366,12 +368,34 @@ fun update_constants(
             val d = getOrDriver(global, driver1, driver2);
 
             if (d == null) {
-                DriverStation.reportError("path: $key doesn't exist in constants", false);
+                DriverStation.reportError("path: $key doesn't exist in constants or invalid type", false);
                 null
             } else {
                 d.content
             }
         }
+        is Distance -> {
+            val d = getOrDriverDistance(global, driver1, driver2);
+
+            if (d == null) {
+                DriverStation.reportError("path: $key doesn't exist in constants or invalid type", false);
+                null
+            } else {
+
+            }
+        }
+
+        is Angle -> {
+            val d = getOrDriverAngle(global, driver1, driver2);
+
+            if (d == null) {
+                DriverStation.reportError("path: $key doesn't exist in constants or invalid type", false);
+                null
+            } else {
+
+            }
+        }
+
         is Array<*> -> {
             DriverStation.reportError("adding int list", false);
 
@@ -555,6 +579,28 @@ fun getAsPrimitive(a: JsonElement?): JsonPrimitive? {
     }
 }
 
+fun getAsDistance(a: JsonElement?): Double? {
+    return when (a) {
+        is JsonObject -> {
+            a["distance"]?.jsonPrimitive?.doubleOrNull
+        }
+        else -> {
+            null
+        }
+    }
+}
+
+fun getAsAngle(a: JsonElement?): Double? {
+    return when (a) {
+        is JsonObject -> {
+            a["angle"]?.jsonPrimitive?.doubleOrNull
+        }
+        else -> {
+            null
+        }
+    }
+}
+
 fun getAsArray(a: JsonElement?): JsonArray? {
     return when (a) {
         is JsonArray -> {
@@ -589,6 +635,32 @@ fun getDefault(
     }
 }
 
+fun getDefaultDistance(
+    global: JsonElement?
+): Double? {
+    return when (global) {
+        is JsonObject -> {
+            getAsDistance(global.get("default"))
+        }
+        else -> {
+            null
+        }
+    }
+}
+
+fun getDefaultAngle(
+    global: JsonElement?
+): Double? {
+    return when (global) {
+        is JsonObject -> {
+            getAsDistance(global.get("default"))
+        }
+        else -> {
+            null
+        }
+    }
+}
+
 fun getDefaultArray(
     global: JsonElement?
 ): JsonArray? {
@@ -613,6 +685,46 @@ fun getOrDriver(
         }
         is JsonPrimitive ->{
             global.jsonPrimitive
+        }
+        else -> {
+            DriverStation.reportError("not primitive or driver $global", true);
+            null
+        }
+    };
+}
+
+fun getOrDriverDistance(
+    global: JsonElement?,
+    driver1: JsonElement?,
+    driver2: JsonElement?,
+): Double? {
+    return when (global) {
+        is JsonObject -> {
+            if (global.containsKey("distance")) {
+                global["distance"]?.jsonPrimitive?.doubleOrNull
+            } else {
+               getAsDistance(driver1) ?: getAsDistance(driver2) ?: getDefaultDistance(global)
+            }
+        }
+        else -> {
+            DriverStation.reportError("not primitive or driver $global", true);
+            null
+        }
+    };
+}
+
+fun getOrDriverAngle(
+    global: JsonElement?,
+    driver1: JsonElement?,
+    driver2: JsonElement?,
+): Double? {
+    return when (global) {
+        is JsonObject -> {
+            if (global.containsKey("angle")) {
+                global["angle"]?.jsonPrimitive?.doubleOrNull
+            } else {
+                getAsAngle(driver1) ?: getAsAngle(driver2) ?: getDefaultAngle(global)
+            }
         }
         else -> {
             DriverStation.reportError("not primitive or driver $global", true);

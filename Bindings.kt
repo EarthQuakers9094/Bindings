@@ -1,6 +1,8 @@
 package bindings
 
 import com.pathplanner.lib.auto.NamedCommands
+import edu.wpi.first.units.Units.Degrees
+import edu.wpi.first.units.Units.Meters
 import edu.wpi.first.units.measure.Angle
 import edu.wpi.first.units.measure.Distance
 import edu.wpi.first.util.ErrorMessages
@@ -381,7 +383,7 @@ fun update_constants(
                 DriverStation.reportError("path: $key doesn't exist in constants or invalid type", false);
                 null
             } else {
-
+                Distance.ofBaseUnits(d, Meters);
             }
         }
 
@@ -392,7 +394,7 @@ fun update_constants(
                 DriverStation.reportError("path: $key doesn't exist in constants or invalid type", false);
                 null
             } else {
-
+                Angle.ofBaseUnits(d, Degrees)
             }
         }
 

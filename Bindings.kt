@@ -17,6 +17,9 @@ import java.io.File
 import java.util.function.Supplier
 import kotlin.math.max
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.collections.toDoubleArray
+import kotlin.collections.toFloatArray
+import kotlin.collections.toIntArray
 import kotlin.reflect.KClass
 import kotlin.reflect.cast
 
@@ -302,6 +305,11 @@ fun update_constants(
     global: JsonElement?,
     driver1: JsonElement?,
     driver2: JsonElement?): Object? {
+
+    val c = constants::class;
+
+    DriverStation.reportWarning("class: $c", false);
+
     val res = when (constants) {
         is Boolean -> {
             val d = getOrDriver(global, driver1, driver2);
@@ -364,20 +372,131 @@ fun update_constants(
                 d.content
             }
         }
-        is List<*> -> {
+        is Array<*> -> {
+            DriverStation.reportError("adding int list", false);
+
             val d = getOrDriverList(global, driver1, driver2);
+
+            DriverStation.reportWarning("length of list: ${d?.size}", false)
 
             if (d == null) {
                 return null;
             }
 
-            val v = constants.mapIndexed { i, a ->
-                val v = update_constants(a as Object, key, d[i], null, null);
+            var v: MutableList<Object> = mutableListOf();
 
-                v
-            }.filterNotNull().takeIf { constants.size == it.size };
+            for (i in 0..d.size - 1) {
+                val a = if (i >= constants.size) {
+                    0
+                } else {
+                    constants[i]
+                }
 
-            v
+                val b = update_constants(a as Object, key, d[i], null, null);
+
+                if (b == null) {
+                    return null;
+                }
+
+                v.add(b)
+            }
+
+            v.toTypedArray()
+        }
+        is BooleanArray -> {
+            DriverStation.reportError("adding int list", false);
+
+            val d = getOrDriverList(global, driver1, driver2);
+
+            DriverStation.reportWarning("length of list: ${d?.size}", false)
+
+            if (d == null) {
+                return null;
+            }
+
+            var v: MutableList<Boolean> = mutableListOf();
+
+            for (i in 0..d.size - 1) {
+                val a = if (i >= constants.size) {
+                    0
+                } else {
+                    constants[i]
+                }
+
+                val b = update_constants(a as Object, key, d[i], null, null);
+
+                if (b == null) {
+                    return null;
+                }
+
+                v.add(b as Boolean)
+            }
+
+            v.toBooleanArray()
+        }
+        is DoubleArray -> {
+            DriverStation.reportError("adding int list", false);
+
+            val d = getOrDriverList(global, driver1, driver2);
+
+            DriverStation.reportWarning("length of list: ${d?.size}", false)
+
+            if (d == null) {
+                return null;
+            }
+
+            var v: MutableList<Double> = mutableListOf();
+
+            for (i in 0..d.size - 1) {
+                val a = if (i >= constants.size) {
+                    0
+                } else {
+                    constants[i]
+                }
+
+                val b = update_constants(a as Object, key, d[i], null, null);
+
+                if (b == null) {
+                    return null;
+                }
+
+                v.add(b as Double)
+            }
+
+            v.toDoubleArray()
+        }
+        is IntArray -> {
+            DriverStation.reportError("adding int list", false);
+
+            val d = getOrDriverList(global, driver1, driver2);
+
+            DriverStation.reportWarning("length of list: ${d?.size}", false)
+
+            DriverStation.reportWarning("list: $d", false);
+
+            if (d == null) {
+                return null;
+            }
+
+            var v: MutableList<Int> = mutableListOf();
+
+            for (i in 0..d.size - 1) {
+                val a = if (i >= constants.size) {
+                    0
+                } else {
+                    constants[i]
+                }
+
+                val b = update_constants(a as Object, key, d[i], null, null);
+
+                if (b == null) {
+                    return null;
+                }
+
+                v.add(b as Int)
+            }
+
+            v.toIntArray()
         }
         is Constant<*> -> {
             val v = update_constants(constants.getValue() as Object, key, global, driver1, driver2);
@@ -439,7 +558,17 @@ fun getAsPrimitive(a: JsonElement?): JsonPrimitive? {
 fun getAsArray(a: JsonElement?): JsonArray? {
     return when (a) {
         is JsonArray -> {
-            a.jsonArray
+            val b = a.jsonArray[0];
+
+            when (b) {
+                is JsonArray -> {
+                    b.jsonArray
+                }
+                else -> {
+                    DriverStation.reportError("how did you even do this $a", true);
+                    null
+                }
+            }
         }
         else -> {
             null
@@ -465,7 +594,7 @@ fun getDefaultArray(
 ): JsonArray? {
     return when (global) {
         is JsonObject -> {
-            global.get("default")?.jsonArray
+            getAsArray(global.get("default"))
         }
         else -> {
             null
@@ -502,7 +631,17 @@ fun getOrDriverList(
             getAsArray(driver1) ?: getAsArray(driver2) ?: getDefaultArray(global)
         }
         is JsonArray ->{
-            global.jsonArray
+            val a = global.jsonArray[0];
+
+            when (a) {
+                is JsonArray -> {
+                    a.jsonArray
+                }
+                else -> {
+                    DriverStation.reportError("how did you even do this $global", true);
+                    null
+                }
+            }
         }
         else -> {
             DriverStation.reportError("not array or driver $global", true);
@@ -817,9 +956,7 @@ class Bindings<C>(private val driver_lock: String?, private val operator_lock: S
             }
         };
 
-        val select_command = MyProxyCommand({
-            DriverStation.reportWarning("getting command to run", false);
-            
+        val select_command = MyProxyCommand({            
             when (button.location) {
                 ButtonLocation.Button -> bindings[controller].regular[b][run.ordinal]
                 ButtonLocation.Pov -> bindings[controller].pov[b][run.ordinal]
